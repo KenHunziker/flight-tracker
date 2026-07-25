@@ -1,8 +1,8 @@
 name: 5-Minute Flight Tracker
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'  # Runs automatically every 5 minutes
+#  schedule:
+#    - cron: '*/15 * * * *'  # Runs automatically every 5 minutes
   workflow_dispatch:      # Gives you a manual "Run" button in GitHub
 
 jobs:
