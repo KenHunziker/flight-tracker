@@ -12,8 +12,8 @@ OPENSKY_CLIENT_ID = "kenhunziker-api-client"
 OPENSKY_CLIENT_SECRET = "bwj0ZSMBvZEb54QcG9Yf5A8h432OUCKr"
 
 # Target ICAO Hex Codes (Uncomment one to track)
-# TARGET_ICAO = "a4b420"
-TARGET_ICAO = "a05598"
+TARGET_ICAO = "a793b1"
+# TARGET_ICAO = "a05598"
 # TARGET_ICAO = "acb824"
 
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1530246683223396593/nBCv3avox9UetYvb31WnsYlfPKV8Q4QQTQeym2ixTfCGo4BNjBYcxznf9Nx7YD-4XpTQ"
@@ -168,6 +168,30 @@ def send_discord_alert(callsign, altitude_ft, speed_kts, heading_str, location_s
     except Exception as e:
         print(f"❌ Failed to send Discord alert: {e}")
 
+def send_discord_offline_alert(icao, last_known_status):
+    """Sends a distinct alert when an aircraft drops off radar / lands."""
+    embed = {
+        "title": f"🛬 Tracking Ended: ICAO {icao.upper()}",
+        "color": 10066329,  # Muted Grey
+        "description": (
+            f"**Status:** `OFFLINE`\n"
+            f"**Previous Status:** `{last_known_status.upper()}`\n\n"
+            f"The aircraft is no longer transmitting telemetry (likely landed or powered off)."
+        ),
+        "footer": {
+            "text": "Flight Tracker"
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    try:
+        res = requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        if res.status_code == 204:
+            print("✅ Discord offline alert sent successfully!")
+        else:
+            print(f"⚠️ Discord Webhook returned status {res.status_code}")
+    except Exception as e:
+        print(f"❌ Failed to send Discord offline alert: {e}")
 
 # ==========================================
 # MAIN EXECUTION LOGIC
@@ -199,18 +223,31 @@ def check_flight():
 
     states = data.get("states")
     
+    # =========================================================================
     # --- SCENARIO A: AIRCRAFT IS OFFLINE ---
+    # =========================================================================
     if not states:
         print("Aircraft is currently offline or inactive.")
         
-        # If it was active previously and just landed/went offline, record status change
+        # Only alert IF it was previously online (Online -> Offline state transition)
         if prev_status != "offline":
-            print(f"🔄 State Change: {prev_status} -> offline")
+            print(f"🔄 State Change Detected: {prev_status} -> offline")
+            
+            # Send the single offline / landed alert
+            send_discord_offline_alert(TARGET_ICAO, prev_status)
+            
+            # Persist state so subsequent runs stay silent
             state["status"] = "offline"
+            state["last_alert_time"] = now_ts
             save_state(state)
+        else:
+            print("ℹ️ Aircraft remains offline. No alert sent.")
+            
         return
 
+    # =========================================================================
     # --- SCENARIO B: AIRCRAFT IS ONLINE ---
+    # =========================================================================
     flight = states[0]
     callsign = flight[1].strip() if flight[1] else "N/A"
     longitude, latitude = flight[5], flight[6]
@@ -222,20 +259,21 @@ def check_flight():
         print(f"Active Flight: {callsign} | Position telemetry temporarily unavailable.")
         return
 
-    # Calculations
+    # Spatial & Telemetry Calculations
     altitude_ft = int(altitude_meters * 3.28084) if altitude_meters is not None else 0
     speed_kts = int(velocity_ms * 1.94384) if velocity_ms is not None else 0
     heading_str = f"{int(round(heading_deg))}° ({get_cardinal_direction(heading_deg)})" if heading_deg is not None else "N/A"
+    
     distance_to_ksea = calculate_haversine_distance(latitude, longitude, KSEA_LAT, KSEA_LON)
     location_str = get_location_description(latitude, longitude)
 
-    # Determine status (Strictly 3-state system)
+    # Determine status
     if distance_to_ksea <= GEOFENCE_RADIUS_MILES:
         current_status = "inside_geofence"
     else:
         current_status = "in_flight"
 
-    print(f"Active Flight: {callsign} | Status: {current_status} |Loc: {location_str} | Alt: {altitude_ft:,} ft | Speed: {speed_kts} kts | KSEA Dist: {distance_to_ksea:.1f} mi")
+    print(f"Active Flight: {callsign} | Status: {current_status} | Loc: {location_str} | Alt: {altitude_ft:,} ft | Speed: {speed_kts} kts | KSEA Dist: {distance_to_ksea:.1f} mi")
 
     # Evaluate Triggers: (1) State Changed OR (2) 1 Hour Elapsed
     state_changed = (current_status != prev_status)
@@ -246,9 +284,17 @@ def check_flight():
         reason = "State Change" if state_changed else "1-Hour Heartbeat"
         print(f"🚀 Triggering Discord Alert (Reason: {reason})")
         
-        send_discord_alert(callsign, altitude_ft, speed_kts, heading_str, location_str, distance_to_ksea, current_status)
+        send_discord_alert(
+            callsign=callsign, 
+            altitude_ft=altitude_ft, 
+            speed_kts=speed_kts, 
+            heading_str=heading_str, 
+            location_str=location_str, 
+            distance_to_ksea=distance_to_ksea, 
+            current_status=current_status
+        )
         
-        # Update persistent state
+        # Persist updated state and timestamp
         state["status"] = current_status
         state["last_alert_time"] = now_ts
         save_state(state)
