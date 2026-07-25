@@ -12,8 +12,8 @@ OPENSKY_CLIENT_ID = "kenhunziker-api-client"
 OPENSKY_CLIENT_SECRET = "bwj0ZSMBvZEb54QcG9Yf5A8h432OUCKr"
 
 # Target ICAO Hex Codes (Uncomment one to track)
-TARGET_ICAO = "a4b420"
-# TARGET_ICAO = "a05598"
+# TARGET_ICAO = "a4b420"
+TARGET_ICAO = "a05598"
 # TARGET_ICAO = "acb824"
 
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1530246683223396593/nBCv3avox9UetYvb31WnsYlfPKV8Q4QQTQeym2ixTfCGo4BNjBYcxznf9Nx7YD-4XpTQ"
